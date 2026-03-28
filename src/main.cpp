@@ -54,25 +54,6 @@ struct SystemSettings
   };
 SystemSettings settings; // Create with default values
 
-void enterLightSleep() 
-  {
-  Log.notice(F("Entering Light Sleep... Waiting for GDO2 signal." CR));
-  
-  // 1. Configure GDO2 (GPIO 4) as the wakeup source
-  // Logic level 1 means wake up when the pin goes HIGH (signal detected)
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)RF_MODULE_GDO2, 1); 
-
-  // 2. Stop the MQTT client and WiFi from background processing if needed
-  // (In Light Sleep, WiFi association is maintained automatically by the hardware)
-
-  // 3. Enter Light Sleep
-  esp_light_sleep_start();
-
-  // --- The processor pauses here until GDO2 triggers ---
-
-  Log.notice(F("Resuming radio processing." CR));
-  }
-
 void sendSettings()
   {
   if (!mqttClient.connected()) return;
@@ -98,7 +79,7 @@ void sendSettings()
   serializeJson(doc, buffer);
   
   mqttClient.publish(settingsTopic.c_str(), 0, false, buffer);
-  Log.notice(F("OK: Settings report published." CR));
+  Log.warning(F("OK: Settings report published." CR));
   }
 
 void sendStatus()
@@ -120,14 +101,14 @@ void sendStatus()
   char statusBuffer[512];
   serializeJson(statusDoc, statusBuffer);
   mqttClient.publish(statusTopic.c_str(), 0, false, statusBuffer);
-  Log.notice(F("OK: Status report published." CR));
+  Log.info(F("OK: Status report published." CR));
   }
 
 void applyPreferences()
   {
   // Apply the RSSI threshold from settings to the OOK receiver
   rf.setRSSIThreshold(settings.appliedRSSIThreshold);
-  Log.notice(F("Applied RSSI Threshold: %d" CR), settings.appliedRSSIThreshold);
+  Log.info(F("Applied RSSI Threshold: %d" CR), settings.appliedRSSIThreshold);
   
   // Future settings can be applied here as well (e.g., frequency offset, debug mode)
   }
@@ -140,12 +121,12 @@ void loadSettings()
   if (preferences.isKey("config"))
     {
     preferences.getBytes("config", &settings, sizeof(SystemSettings));
-    Log.notice(F("--> Settings restored from Flash." CR));
+    Log.warning(F("--> Settings restored from Flash." CR));
     applyPreferences(); // Apply loaded settings to the system (e.g., set RSSI threshold)
     }
   else
     {
-    Log.warning(F("--> No Flash settings found. Using defaults." CR));
+    Log.error(F("--> No Flash settings found. Using defaults." CR));
     }
     
   preferences.end();
@@ -159,7 +140,7 @@ void saveSettings()
   preferences.putBytes("config", &settings, sizeof(SystemSettings));
   
   preferences.end();
-  Log.notice(F("--> All settings saved to Flash." CR));
+  Log.warning(F("--> All settings saved to Flash." CR));
   }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) 
@@ -201,7 +182,7 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
       {
       rf.setRSSIThreshold(newRSSI);
       settings.appliedRSSIThreshold = newRSSI; // Update our preferences
-      Log.notice(F("OK: MIN_RSSI set to %d" CR), newRSSI);
+      Log.warning(F("OK: MIN_RSSI set to %d" CR), newRSSI);
       changed = true;
       sendStatus(); // Report back the new state
       }
@@ -213,32 +194,38 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   else if (key == "ssid_primary") 
     {
     strncpy(settings.ssidPrimary, val.c_str(), sizeof(settings.ssidPrimary) - 1);
+    Log.warning(F("OK: ssid_primary set to %s" CR), settings.ssidPrimary);
     changed = true;
     }
   else if (key == "pass_primary") 
     {
     strncpy(settings.passPrimary, val.c_str(), sizeof(settings.passPrimary) - 1);
+    Log.warning(F("OK: pass_primary set to %s" CR), settings.passPrimary);
     changed = true;
     }
   else if (key == "ssid_backup") 
     {
     strncpy(settings.ssidBackup, val.c_str(), sizeof(settings.ssidBackup) - 1);
+    Log.warning(F("OK: ssid_backup set to %s" CR), settings.ssidBackup);
     changed = true;
     }
   else if (key == "pass_backup") 
     {
     strncpy(settings.passBackup, val.c_str(), sizeof(settings.passBackup) - 1);
+    Log.warning(F("OK: pass_backup set to %s" CR), settings.passBackup);
     changed = true;
     }
   else if (key == "mqtt_host") 
     {
     strncpy(settings.mqttHost, val.c_str(), sizeof(settings.mqttHost) - 1);
     settings.mqttHost[sizeof(settings.mqttHost) - 1] = '\0'; // Force null terminator
+    Log.warning(F("OK: mqtt_host set to %s" CR), settings.mqttHost);
     changed = true;
     }  
   else if (key == "mqtt_port")
     {
     settings.mqttPort = val.toInt();
+    Log.warning(F("OK: mqtt_port set to %d" CR), settings.mqttPort);
     changed = true;
     }  
   else if (key == "restart")
@@ -260,19 +247,19 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 
 void connectToMqtt() 
   {
-  Log.notice(F("Connecting to MQTT..." CR));
+  Log.warning(F("Connecting to MQTT..." CR));
   mqttClient.connect();
   }
 
 void onMqttConnect(bool sessionPresent) 
   {
-  Log.notice(F("Connected to MQTT." CR));
+  Log.warning(F("Connected to MQTT." CR));
 
   // Subscribe to the command topic
   String cmdTopic = String(PUBLISH_TOPIC) + "command";
   mqttClient.subscribe(cmdTopic.c_str(), 0);
   
-  Log.notice(F("Subscribed to: %s" CR), cmdTopic.c_str());
+  Log.warning(F("Subscribed to: %s" CR), cmdTopic.c_str());
 
 // this is out of place here:  sendSettings(); // Send settings report on startup
   sendStatus(); // Send an initial status report on startup
@@ -280,7 +267,7 @@ void onMqttConnect(bool sessionPresent)
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) 
   {
-  Log.notice(F("Disconnected from MQTT." CR));
+  Log.error(F("Disconnected from MQTT." CR));
   if (WiFi.isConnected()) 
     {
     xTimerStart(mqttReconnectTimer, 0);
@@ -297,10 +284,10 @@ void logJson(JsonDocument jsondata) {
 #endif
 #if defined(setBitrate) || defined(setFreqDev) || defined(setRxBW)
   Log.setShowLevel(false);
-  Log.notice(F("."));
+  Log.info(F("."));
   Log.setShowLevel(true);
 #else
-  Log.notice(F("Received message : %s" CR), JSONmessageBuffer);
+  Log.info(F("Received message : %s" CR), JSONmessageBuffer);
 #endif
 }
 
@@ -327,7 +314,7 @@ void rtl_433_Callback(char* message)
       
       if (id == lastPublishedId && (millis() - lastPublishTime < 2000))
         {
-        Log.warning(F("Duplicate message detected, skipping MQTT publish." CR));
+        Log.info(F("Duplicate message detected, skipping MQTT publish." CR));
         }
       else
         {
@@ -346,7 +333,7 @@ void rtl_433_Callback(char* message)
 
 void connectToWiFi(const char* ssid, const char* password)
   {
-  Log.notice(F("Attempting WiFi: %s " CR), ssid);
+  Log.warning(F("Attempting WiFi: %s " CR), ssid);
   WiFi.begin(ssid, password);
 
   int attempts = 0;
@@ -360,12 +347,12 @@ void connectToWiFi(const char* ssid, const char* password)
   
   if (WiFi.status() == WL_CONNECTED)
     {
-    Log.notice(F("SUCCESS!" CR));
-    Log.notice(F("Connected to %s | IP: %s" CR), ssid, WiFi.localIP().toString().c_str());
+    Log.warning(F("SUCCESS!" CR));
+    Log.warning(F("Connected to %s | IP: %s" CR), ssid, WiFi.localIP().toString().c_str());
     }
   else
     {
-    Log.error(F("Failed to connect." CR));
+    Log.fatal(F("Failed to connect to %s." CR), ssid);
     }
   }
 
@@ -399,8 +386,8 @@ void setup()
   #define LOG_LEVEL LOG_LEVEL_SILENT
 #endif
   Log.begin(LOG_LEVEL, &Serial);
-  Log.notice(F(" " CR));
-  Log.notice(F("****** setup ******" CR));
+  Log.info(F(" " CR));
+  Log.info(F("****** setup ******" CR));
 
   // Setup MQTT Reconnect Timer
   mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
@@ -417,7 +404,7 @@ void setup()
   // Start the first MQTT connection attempt
   connectToMqtt();
 
-  Log.notice(F("****** setup complete ******" CR));
+  Log.info(F("****** setup complete ******" CR));
   rf.getModuleStatus();
   }
 
@@ -494,7 +481,7 @@ void loop()
     // If WiFi is fine, check MQTT
     else if (!mqttClient.connected())
     {
-      Log.notice(F("WiFi Up, but MQTT Disconnected. Triggering MQTT reconnect..." CR));
+      Log.warning(F("WiFi Up, but MQTT Disconnected. Triggering MQTT reconnect..." CR));
       connectToMqtt(); 
     }
   }
@@ -514,13 +501,13 @@ void loop()
   if (uptime() > next) {
     next = uptime() + 120; // 60 seconds
     dtostrf(step, 7, 2, stepPrint);
-    Log.notice(F(CR "Finished %s: %s, count: %d" CR), TEST, stepPrint, count);
+    Log.info(F(CR "Finished %s: %s, count: %d" CR), TEST, stepPrint, count);
     step += STEP;
     if (step > stepMax) {
       step = stepMin;
     }
     dtostrf(step, 7, 2, stepPrint);
-    Log.notice(F("Starting %s with %s" CR), TEST, stepPrint);
+    Log.info(F("Starting %s with %s" CR), TEST, stepPrint);
     count = 0;
 
     int16_t state = 0;
@@ -533,7 +520,7 @@ void loop()
 #  elif defined(setRxBW)
     state = rf.setRxBandwidth(step);
     if ((state) != RADIOLIB_ERR_NONE) {
-      Log.notice(F(CR "Setting  %s: to %s, failed" CR), TEST, stepPrint);
+      Log.info(F(CR "Setting  %s: to %s, failed" CR), TEST, stepPrint);
       next = uptime() - 1;
     }
 #  endif
