@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include <AsyncMqttClient.h>
 #include <Preferences.h>
+#include <esp_task_wdt.h>
 #include "radioDataInterface.h"
 #include "secrets.h"
 
@@ -406,6 +407,10 @@ void setup()
 
   Log.info(F("****** setup complete ******" CR));
   rf.getModuleStatus();
+
+  // Set watchdog to 15 seconds. If loop() doesn't finish in 15s, REBOOT.
+  esp_task_wdt_init(15, true); 
+  esp_task_wdt_add(NULL);      // Add the current (main) task to WDT
   }
 
 #if defined(setBitrate) || defined(setFreqDev) || defined(setRxBW)
@@ -450,6 +455,8 @@ const unsigned long SLEEP_DELAY = 30000; // 30 seconds
 
 void loop()
 {
+  esp_task_wdt_reset();        // Tell the watchdog "I'm still alive"
+
   // 1. Give the radio absolute priority
   rf.loop();
 
