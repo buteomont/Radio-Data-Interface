@@ -1,5 +1,9 @@
 /*
- Basic rtl_433_ESP example for OOK/ASK Devices
+This is a program to receive OOK/ASK signals using a CC1101 module and publish 
+them to MQTT in JSON format. Configuration is done via MQTT commands, and 
+settings are persisted in flash memory.
+
+Based on rtl_433_ESP example for OOK/ASK Devices
  https://github.com/NorthernMan54/rtl_433_ESP
 
 */
