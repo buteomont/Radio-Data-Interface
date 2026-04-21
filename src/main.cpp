@@ -99,6 +99,7 @@ void sendStatus()
   // Pull the current threshold directly from the library object
   statusDoc["applied_rssi_threshold_delta"] = rf.rssiThresholdDelta;
   
+  statusDoc["wifi_rssi"] = WiFi.RSSI();
   statusDoc["uptime_sec"] = millis() / 1000;
   statusDoc["heap"] = ESP.getFreeHeap();
 
@@ -412,8 +413,8 @@ void setup()
   Log.info(F("****** setup complete ******" CR));
   rf.getModuleStatus();
 
-  // Set watchdog to 15 seconds. If loop() doesn't finish in 15s, REBOOT.
-  esp_task_wdt_init(15, true); 
+  // Set watchdog to 120 seconds. If loop() doesn't finish in 120s, REBOOT.
+  esp_task_wdt_init(120, true); 
   esp_task_wdt_add(NULL);      // Add the current (main) task to WDT
   }
 
@@ -453,35 +454,32 @@ float step = stepMin;
 
 unsigned long lastWifiCheck = 0;
 unsigned long lastConnectAttempt = 0;
-const unsigned long RECONNECT_DELAY = 10000; // Wait 10 seconds between attempts
 unsigned long lastRadioActivity = 0;
-const unsigned long SLEEP_DELAY = 30000; // 30 seconds
 
 void loop()
-{
+  {
   esp_task_wdt_reset();        // Tell the watchdog "I'm still alive"
 
-  // 1. Give the radio absolute priority
   rf.loop();
 
   // 2. Periodic Network Health Check (The Gatekeeper)
   if (millis() - lastWifiCheck > settings.wifiCheckInterval)
-  {
+    {
     lastWifiCheck = millis();
     
     // Check WiFi first
     if (WiFi.status() != WL_CONNECTED)
-    {
+      {
       Log.error(F("WiFi Down. Triggering reconnect..." CR));
       setupWiFi(); // Calls WiFi.begin() once, then returns
-    } 
+      } 
     // If WiFi is fine, check MQTT
     else if (!mqttClient.connected())
-    {
+      {
       Log.warning(F("WiFi Up, but MQTT Disconnected. Triggering MQTT reconnect..." CR));
       connectToMqtt(); 
+      }
     }
-  }
 
   // 3. Periodic Status Report
   if (millis() - lastStatusReport > STATUS_REPORT_INTERVAL)
@@ -526,4 +524,4 @@ void loop()
     // rf.getModuleStatus();
   }
 #endif
-}
+  }
